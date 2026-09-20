@@ -1,0 +1,45 @@
+{
+  "class_names": [
+    "0",
+    "1",
+    "2",
+    "3",
+    "4",
+    "5",
+    "6",
+    "7",
+    "8",
+    "9",
+    "add",
+    "div",
+    "eq",
+    "mul",
+    "sub"
+  ],
+  "img_size": [
+    64,
+    64
+  ],
+  "seed": 42,
+  "n_train": 5785,
+  "n_val": 643,
+  "n_test": 1608,
+  "aug_per_image": 2,
+  "aug_counts": {
+    "stroke": 3843,
+    "occlusion": 3838,
+    "photometric": 3889
+  },
+  "max_epochs": 12,
+  "epochs_run": {
+    "CNN (real only)": 12,
+    "CNN (augmented)": 12
+  },
+  "dataset": {
+    "files": 8384,
+    "unreadable": 0,
+    "duplicates_removed": 347,
+    "label_conflicts_removed": 1,
+    "kept": 8036
+  }
+}

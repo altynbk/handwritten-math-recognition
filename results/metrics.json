@@ -1,0 +1,32 @@
+{
+  "SVM (HOG)": {
+    "clean_test": {
+      "accuracy": 0.9639303482587065,
+      "f1_macro": 0.9640348739493636
+    },
+    "augmented_test": {
+      "accuracy": 0.8426616915422885,
+      "f1_macro": 0.8465519335274385
+    }
+  },
+  "CNN (real only)": {
+    "clean_test": {
+      "accuracy": 0.9950248756218906,
+      "f1_macro": 0.9952156483611769
+    },
+    "augmented_test": {
+      "accuracy": 0.7120646766169154,
+      "f1_macro": 0.7588310330731658
+    }
+  },
+  "CNN (augmented)": {
+    "clean_test": {
+      "accuracy": 0.9944029850746269,
+      "f1_macro": 0.9946399348194616
+    },
+    "augmented_test": {
+      "accuracy": 0.9844527363184079,
+      "f1_macro": 0.9848686985008712
+    }
+  }
+}
