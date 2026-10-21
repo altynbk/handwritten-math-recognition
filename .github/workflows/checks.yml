@@ -2,10 +2,16 @@ name: Project checks
 
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: project-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   verify:
@@ -44,3 +50,13 @@ jobs:
       - name: Execute the walkthrough without training
         if: runner.os == 'Linux'
         run: python scripts/check_notebook.py
+      - name: Save verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: verification-${{ matrix.os }}
+          path: |
+            runs/ci-verification.json
+            runs/walkthrough.executed.ipynb
+          if-no-files-found: ignore
+          retention-days: 14
