@@ -37,7 +37,9 @@ Two dependency details matter:
   models cannot inherit the bundled benchmark scores, and optional display
   metrics cannot break inference.
 - All six code cells of `notebooks/walkthrough.ipynb` execute without training.
-  Committed outputs show the actual saved-model results and error examples.
+  The execution check also requires all five rendered plots, so a headless
+  backend cannot silently produce a text-only notebook. Committed outputs show
+  the actual saved-model results and error examples.
 - An automated training test fits all three models on 60 synthetic images in
   two classes (one epoch per CNN), writes plots and metadata, and reloads the
   artifacts to reproduce its own metrics. This runs in the standard test suite;
