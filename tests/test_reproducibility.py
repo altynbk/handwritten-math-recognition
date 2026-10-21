@@ -36,8 +36,10 @@ def test_invalid_training_parameters_do_not_create_a_run(tmp_path):
     assert not list(tmp_path.iterdir())
 
 
-def test_metadata_validation(tmp_path):
-    (tmp_path / "meta.json").write_text(json.dumps({"class_names": ["1", "1"], "img_size": [64, 64]}))
+@pytest.mark.parametrize("metadata", [[], {"class_names": ["1", "1"], "img_size": [64, 64]},
+    {"class_names": [""], "img_size": [64, 64]}, {"class_names": ["1"], "img_size": [True, 64]}])
+def test_metadata_validation(tmp_path, metadata):
+    (tmp_path / "meta.json").write_text(json.dumps(metadata))
     with pytest.raises(ValueError, match="Invalid"):
         load_metadata(tmp_path)
 
@@ -50,3 +52,21 @@ def test_verification_detects_changed_and_missing_results():
     assert len(differences) == 1 and "f1_macro" in differences[0]
     del changed["SVM (HOG)"]
     assert metric_differences(changed, expected)
+
+
+@pytest.mark.parametrize("side", ["actual", "expected"])
+def test_verification_rejects_incomplete_and_invalid_reports(side):
+    reference = json.loads((ROOT / "results/metrics.json").read_text())
+    for invalid in (None, float("nan"), float("inf"), "0.8", True, -0.1, 1.1):
+        reports = {"actual": copy.deepcopy(reference), "expected": copy.deepcopy(reference)}
+        reports[side]["SVM (HOG)"]["augmented_test"]["f1_macro"] = invalid
+        assert metric_differences(**reports)
+    for missing in ("metric", "split"):
+        reports = {"actual": copy.deepcopy(reference), "expected": copy.deepcopy(reference)}
+        model = reports[side]["SVM (HOG)"]
+        if missing == "metric":
+            del model["augmented_test"]["f1_macro"]
+        else:
+            del model["augmented_test"]
+        assert metric_differences(**reports)
+    assert metric_differences({}, {})

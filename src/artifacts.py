@@ -13,11 +13,13 @@ def load_metadata(directory):
         raise FileNotFoundError(f"Missing {path}. Restore the model files from the repository.")
     with path.open() as handle:
         meta = json.load(handle)
+    if not isinstance(meta, dict):
+        raise ValueError(f"Invalid metadata object in {path}.")
     names, size = meta.get("class_names"), meta.get("img_size")
     if (not isinstance(names, list) or not names
-            or not all(isinstance(n, str) for n in names) or len(set(names)) != len(names)
+            or not all(isinstance(n, str) and n.strip() for n in names) or len(set(names)) != len(names)
             or not isinstance(size, list) or len(size) != 2
-            or not all(isinstance(n, int) and n > 0 for n in size)):
+            or not all(type(n) is int and n > 0 for n in size)):
         raise ValueError(f"Invalid class names or image size in {path}.")
     return meta
 

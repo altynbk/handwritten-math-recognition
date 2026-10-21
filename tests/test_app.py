@@ -1,9 +1,14 @@
+import os
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 from PIL import Image
 
 import app
 from src.data import preprocess
+from src.config import ROOT
 
 
 @pytest.mark.parametrize("source", ["Draw", "Upload"])
@@ -25,6 +30,7 @@ def test_selected_source_is_used_and_svm_has_no_fake_probability(source, symbols
     assert isinstance(label, str) and overlay is None
     assert app.out_label.postprocess(label).confidences is None
     assert "does not provide probabilities" in info
+    assert "test acc 0.9639, F1 0.9640" in info
 
 
 @pytest.mark.parametrize("name", ["CNN (real only)", "CNN (augmented)"])
@@ -48,3 +54,24 @@ def test_unsupported_source_or_model_is_rejected(symbols):
         app.predict("invalid", symbols[0], None, "SVM (HOG)", False)
     with pytest.raises(app.gr.Error, match="available models"):
         app.predict("Draw", symbols[0], None, "invalid", False)
+
+
+@pytest.mark.parametrize("contents", [None, "invalid JSON", "[]", "{}",
+    '{"SVM (HOG)": {"clean_test": {"accuracy": null, "f1_macro": 0.9}}}'])
+def test_missing_or_invalid_optional_metrics_do_not_break_prediction(monkeypatch, tmp_path, symbols, contents):
+    monkeypatch.setattr(app, "RESULTS_DIR", tmp_path)
+    if contents is not None:
+        (tmp_path / "metrics.json").write_text(contents)
+    label, preview, _, info = app.predict("Upload", None, symbols[0], "SVM (HOG)", False)
+    assert isinstance(label, str) and preview.size == (192, 192)
+    assert "metrics are unavailable" in info and "test acc" not in info
+
+
+@pytest.mark.parametrize("results", [None, "custom-results"])
+def test_custom_models_require_their_own_results_directory(tmp_path, results):
+    env = dict(os.environ, MODELS_DIR=str(tmp_path))
+    env.pop("RESULTS_DIR", None)
+    if results is not None:
+        env["RESULTS_DIR"] = results
+    subprocess.run([sys.executable, "-c", f"import app; assert app.RESULTS_DIR == {results!r}"],
+                   cwd=ROOT, env=env, check=True, capture_output=True, text=True)
