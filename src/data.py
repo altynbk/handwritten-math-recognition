@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 from typing import List, Tuple
 
@@ -64,6 +65,21 @@ def preprocess(img: Image.Image, size: Tuple[int, int] = IMG_SIZE, autocrop: boo
     return arr.astype("float32")[..., None]
 
 
+def has_content(img: Image.Image) -> bool:
+    """Reject uniform/empty inputs in either polarity, including transparency."""
+    arr = normalize_polarity(to_gray_array(img))
+    return bool(np.ptp(arr) > 0.05 and np.any(arr > 0.25))
+
+
+def dataset_digest(X, y, class_names) -> str:
+    """Fingerprint the ordered, canonical images and their labels."""
+    digest = hashlib.sha256(json.dumps(class_names).encode())
+    for image, label in zip(X, y):
+        digest.update((image * 255).round().astype("uint8").tobytes())
+        digest.update(int(label).to_bytes(4, "little"))
+    return digest.hexdigest()
+
+
 def load_dataset(data_dir: str, size: Tuple[int, int] = IMG_SIZE):
     """Load `data_dir/<class_name>/*.png|jpg`.
 
@@ -76,7 +92,7 @@ def load_dataset(data_dir: str, size: Tuple[int, int] = IMG_SIZE):
     if not os.path.isdir(data_dir):
         raise FileNotFoundError(
             f"Dataset folder not found: {data_dir}\n"
-            "Run `python scripts/download_data.py --url <dataset zip url>` first."
+            "The dataset is included in data/handwritten_dataset; restore it from the repository."
         )
     class_names: List[str] = sorted(
         d for d in os.listdir(data_dir) if os.path.isdir(os.path.join(data_dir, d))
@@ -116,6 +132,8 @@ def load_dataset(data_dir: str, size: Tuple[int, int] = IMG_SIZE):
         X = [X[i] for i in keep]
         y = [y[i] for i in keep]
     stats["kept"] = len(X)
+    if not X:
+        raise ValueError(f"No usable, unambiguous images found in {data_dir}.")
     return np.stack(X).astype("float32"), np.array(y, dtype="int64"), class_names, stats
 
 
