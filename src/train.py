@@ -2,7 +2,8 @@
 
     python -m src.train --data data/handwritten_dataset
 
-Fair comparison: both CNNs share architecture, callbacks and validation split.
+Both CNNs share architecture, callbacks and validation split. The augmented
+model receives more gradient updates; this is not a compute-matched comparison.
 The test split is used once, at the end. Models are additionally evaluated on a
 fixed-seed *augmented* copy of the test set to measure robustness.
 """
@@ -11,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
 
 import matplotlib
 
@@ -19,30 +21,20 @@ import matplotlib.pyplot as plt
 import numpy as np
 import tensorflow as tf
 from joblib import dump
-from skimage.feature import hog
-from sklearn.metrics import ConfusionMatrixDisplay, accuracy_score, confusion_matrix, f1_score
+from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix
 from sklearn.svm import LinearSVC
 
 from .augment import AUGMENTATIONS, augment_dataset, augment_once
-from .data import IMG_SIZE, load_dataset, split_data
+from .config import DATA_DIR, ROOT, EPOCHS, AUG_PER_IMAGE, SEED, package_versions
+from .data import IMG_SIZE, dataset_digest, load_dataset, split_data
+from .evaluate import hog_features, scores
 from .models import build_cnn, gradcam_heatmap, make_callbacks, overlay_heatmap
-
-
-def hog_features(X: np.ndarray) -> np.ndarray:
-    return np.array([hog(im.squeeze(), pixels_per_cell=(8, 8), cells_per_block=(2, 2)) for im in X])
-
-
-def scores(y_true, y_pred) -> dict:
-    return {
-        "accuracy": float(accuracy_score(y_true, y_pred)),
-        "f1_macro": float(f1_score(y_true, y_pred, average="macro")),
-    }
 
 
 def save_aug_examples(X, y, class_names, path, seed):
     rng = np.random.default_rng(seed)
     n_cls = min(4, len(class_names))
-    fig, axes = plt.subplots(n_cls, 1 + len(AUGMENTATIONS) * 2, figsize=(12, 2 * n_cls))
+    fig, axes = plt.subplots(n_cls, 1 + len(AUGMENTATIONS) * 2, figsize=(12, 2 * n_cls), squeeze=False)
     for r in range(n_cls):
         img = X[np.where(y == r)[0][0]]
         axes[r, 0].imshow(img.squeeze(), cmap="gray")
@@ -62,7 +54,7 @@ def save_aug_examples(X, y, class_names, path, seed):
 
 def save_gradcam_examples(model, X, y_true, class_names, path, n=6):
     idx = np.random.default_rng(0).choice(len(X), size=min(n, len(X)), replace=False)
-    fig, axes = plt.subplots(2, len(idx), figsize=(2 * len(idx), 4.4))
+    fig, axes = plt.subplots(2, len(idx), figsize=(2 * len(idx), 4.4), squeeze=False)
     for j, i in enumerate(idx):
         pred = int(np.argmax(model.predict(X[i][None], verbose=0)[0]))
         heat = gradcam_heatmap(model, X[i], pred)
@@ -94,10 +86,25 @@ def save_comparison(metrics, path):
     plt.close(fig)
 
 
-def run(data_dir="data/handwritten_dataset", out_dir="models", results_dir="results",
-        epochs=30, aug_per_image=2, seed=42):
-    os.makedirs(out_dir, exist_ok=True)
-    os.makedirs(results_dir, exist_ok=True)
+def prepare_output_dirs(out_dir, results_dir):
+    """Validate both destinations before creating anything; never replace a run."""
+    paths = [Path(out_dir).resolve(), Path(results_dir).resolve()]
+    if paths[0] in paths[1].parents or paths[1] in paths[0].parents or paths[0] == paths[1]:
+        raise ValueError("Model and result directories must be separate, non-overlapping directories.")
+    for path in paths:
+        if any(path == ROOT / name or ROOT / name in path.parents for name in ("models", "results", "data")):
+            raise ValueError(f"Published artifacts and data are protected: {path}. Use a new directory under runs/.")
+        if path.exists() and (not path.is_dir() or any(path.iterdir())):
+            raise FileExistsError(f"Output is not an empty directory: {path}. Choose a new run name.")
+    for path in paths:
+        path.mkdir(parents=True, exist_ok=True)
+
+
+def run(data_dir=DATA_DIR, out_dir=ROOT / "runs/retrain/models", results_dir=ROOT / "runs/retrain/results",
+        epochs=EPOCHS, aug_per_image=AUG_PER_IMAGE, seed=SEED):
+    if epochs < 1 or aug_per_image < 0:
+        raise ValueError("epochs must be positive and aug_per_image must be nonnegative.")
+    prepare_output_dirs(out_dir, results_dir)
     tf.keras.utils.set_random_seed(seed)
 
     X, y, class_names, data_stats = load_dataset(data_dir)
@@ -115,7 +122,7 @@ def run(data_dir="data/handwritten_dataset", out_dir="models", results_dir="resu
     metrics = {}
 
     # ---- HOG + linear SVM --------------------------------------------------
-    svm = LinearSVC(dual="auto").fit(hog_features(X_tr), y_tr)
+    svm = LinearSVC(dual="auto", random_state=seed).fit(hog_features(X_tr), y_tr)
     metrics["SVM (HOG)"] = {
         "clean_test": scores(y_te, svm.predict(hog_features(X_te))),
         "augmented_test": scores(y_te, svm.predict(hog_features(X_te_aug))),
@@ -158,7 +165,9 @@ def run(data_dir="data/handwritten_dataset", out_dir="models", results_dir="resu
         json.dump({"class_names": class_names, "img_size": list(IMG_SIZE), "seed": seed,
                    "n_train": len(X_tr), "n_val": len(X_va), "n_test": len(X_te),
                    "aug_per_image": aug_per_image, "aug_counts": aug_counts,
-                   "max_epochs": epochs, "epochs_run": epochs_run, "dataset": data_stats}, f, indent=2)
+                   "max_epochs": epochs, "epochs_run": epochs_run, "dataset": data_stats,
+                   "environment": package_versions(),
+                   "split_sha256": {k: dataset_digest(*v, class_names) for k, v in parts.items()}}, f, indent=2)
 
     lines = ["| Model | Clean test acc | Clean test F1 | Augmented test acc | Augmented test F1 |",
              "|---|---|---|---|---|"]
@@ -174,12 +183,12 @@ def run(data_dir="data/handwritten_dataset", out_dir="models", results_dir="resu
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--data", default="data/handwritten_dataset")
-    p.add_argument("--out", default="models")
-    p.add_argument("--results", default="results")
-    p.add_argument("--epochs", type=int, default=30)
-    p.add_argument("--aug-per-image", type=int, default=2)
-    p.add_argument("--seed", type=int, default=42)
+    p.add_argument("--data", default=DATA_DIR)
+    p.add_argument("--out", default=ROOT / "runs/retrain/models")
+    p.add_argument("--results", default=ROOT / "runs/retrain/results")
+    p.add_argument("--epochs", type=int, default=EPOCHS)
+    p.add_argument("--aug-per-image", type=int, default=AUG_PER_IMAGE)
+    p.add_argument("--seed", type=int, default=SEED)
     a = p.parse_args()
     run(a.data, a.out, a.results, a.epochs, a.aug_per_image, a.seed)
 
