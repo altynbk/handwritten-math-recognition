@@ -46,6 +46,12 @@ perturbation for demonstration, so repeated clicks can give different results.
 
 ## Results
 
+The SVM uses HOG features (9 orientations, 8×8-pixel cells, 2×2-cell blocks)
+and a linear classifier. Both CNNs use four `Conv2D → BatchNorm → MaxPool`
+blocks with 32, 64, 128 and 256 filters, followed by global average pooling,
+50% dropout and a 15-class softmax layer. Training uses Adam, batch size 64,
+early stopping and learning-rate reduction based on validation loss.
+
 Held-out test: **1,608 images**. The augmented test is a fixed-seed transformed
 copy of those same images.
 
@@ -123,6 +129,23 @@ To use a new run in the demo on macOS/Linux:
 ```bash
 MODELS_DIR=runs/retrain/models RESULTS_DIR=runs/retrain/results python app.py
 ```
+
+Set both directories to the same training run. If only `MODELS_DIR` is changed,
+the app omits benchmark scores. Missing or malformed optional metrics do not
+prevent prediction; the app reports that saved evaluation metrics are unavailable.
+
+## Troubleshooting
+
+| Symptom | What to check |
+|---|---|
+| Import or dependency errors | Use Python 3.12, activate `.venv`, reinstall `requirements.txt`, then run `python -m pip check`. |
+| Missing model files | Restore the bundled `models/` files or point `MODELS_DIR` to a complete training run. |
+| Notebook cannot import `src` | Install `requirements-notebook.txt` in the active environment and launch Jupyter from the repository root. |
+| The image is empty | Draw a visible stroke or upload a contrasting single symbol; select the matching input source. |
+| Output directory is not empty | Choose a new pair of directories under `runs/` for the next training run. |
+
+Linux and macOS are covered by CI. The Windows activation commands above are
+provided for convenience; Windows is not currently part of the automated checks.
 
 ## Data and limitations
 
