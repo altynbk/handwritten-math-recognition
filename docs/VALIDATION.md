@@ -29,23 +29,33 @@ Two dependency details matter:
 
 ## Checks
 
-- 22 regression tests cover empty inputs, source selection, real saved-model
+- 35 tests cover empty inputs, source selection, real saved-model
   inference, SVM output without invented probabilities, Grad-CAM, preprocessing,
   deterministic splitting and augmentation, duplicate/conflicting-label
   removal, artifact errors, and protection against overwriting published runs.
+  They also check that missing or invalid metrics fail verification, custom
+  models cannot inherit the bundled benchmark scores, and optional display
+  metrics cannot break inference.
 - All six code cells of `notebooks/walkthrough.ipynb` execute without training.
   Committed outputs show the actual saved-model results and error examples.
-- A separate local smoke run trained all three models on 60 synthetic images
-  in two classes (one epoch per CNN), wrote plots and metadata, and reloaded
-  its artifacts to reproduce its own metrics. This verifies the training path;
+- An automated training test fits all three models on 60 synthetic images in
+  two classes (one epoch per CNN), writes plots and metadata, and reloads the
+  artifacts to reproduce its own metrics. This runs in the standard test suite;
   its scores are not project benchmark results.
 - Browser checks covered drawing, undo/redo, source switching with both inputs
   populated, upload, empty upload rejection, clearing stale results, all three
-  models, random augmentation and Grad-CAM. Gradio 6.30.0 fixes the observed
+  models, random augmentation and Grad-CAM. Switching inputs during inference
+  cancels the old response so it cannot repopulate the cleared outputs.
+  Gradio 6.30.0 fixes the observed
   canvas history failure in 5.49.1/5.50.0. No frontend errors occurred in the
   final demo session.
 - GitHub Actions runs dependency checks, regression tests and saved-model
-  evaluation on Linux and macOS. Linux also executes the notebook.
+  evaluation on Linux and macOS. Linux also executes the notebook. Each run
+  preserves verification JSON and, on Linux, the executed notebook as downloadable
+  artifacts for 14 days. PRs are checked once per update; pushes to `main` and
+  manual runs are also supported.
+- A fresh Python 3.12 environment with only `requirements.txt` installed runs
+  the demo and reproduces all published metrics, without test or notebook packages.
 
 ## Updating dependencies
 
