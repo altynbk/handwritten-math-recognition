@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 
 import gradio as gr
 import numpy as np
@@ -18,7 +19,9 @@ from src.data import has_content, preprocess
 from src.evaluate import hog_features
 
 MODELS_DIR = os.environ.get("MODELS_DIR", str(DEFAULT_MODELS_DIR))
-RESULTS_DIR = os.environ.get("RESULTS_DIR", str(DEFAULT_RESULTS_DIR))
+# A different model directory must not inherit the bundled model's scores.
+RESULTS_DIR = os.environ.get("RESULTS_DIR", str(DEFAULT_RESULTS_DIR)
+                             if Path(MODELS_DIR).resolve() == DEFAULT_MODELS_DIR.resolve() else None)
 
 CHOICES = ["CNN (augmented)", "CNN (real only)", "SVM (HOG)"]
 _cache: dict = {}
@@ -30,12 +33,20 @@ def _meta() -> dict:
     return _cache["meta"]
 
 
-def _metrics() -> dict:
-    path = os.path.join(RESULTS_DIR, "metrics.json")
-    if os.path.exists(path):
-        with open(path) as f:
-            return json.load(f)
-    return {}
+def _clean_metrics(model_name):
+    """Optional display information must never prevent model inference."""
+    if RESULTS_DIR is None:
+        return None
+    try:
+        with (Path(RESULTS_DIR) / "metrics.json").open() as handle:
+            metrics = json.load(handle)[model_name]["clean_test"]
+        values = [metrics[key] for key in ("accuracy", "f1_macro")]
+        if all(isinstance(v, (int, float)) and not isinstance(v, bool)
+               and np.isfinite(v) and 0 <= v <= 1 for v in values):
+            return metrics
+    except (OSError, ValueError, KeyError, TypeError):
+        pass
+    return None
 
 
 def _model(name: str):
@@ -93,11 +104,12 @@ def predict(input_source, sketch, upload, model_name, add_noise):
             (192, 192), Image.Resampling.NEAREST)
         note = f"Scores compare the {len(class_names)} known classes; they do not establish that an image is a supported symbol."
 
-    m = _metrics().get(model_name)
-    info = (f"{model_name} | test acc {m['clean_test']['accuracy']:.4f}, "
-            f"F1 {m['clean_test']['f1_macro']:.4f}" if m else model_name)
-    if note:
-        info += f"\n{note}"
+    m = _clean_metrics(model_name)
+    if m:
+        info = f"{model_name} | test acc {m['accuracy']:.4f}, F1 {m['f1_macro']:.4f}"
+    else:
+        info = f"{model_name}\nSaved evaluation metrics are unavailable."
+    info += f"\n{note}"
 
     shown = Image.fromarray((x.squeeze() * 255).astype("uint8")).resize((192, 192), Image.Resampling.NEAREST)
     return label, shown, overlay, info
@@ -125,12 +137,14 @@ with gr.Blocks(title="Handwritten digits & math symbols") as demo:
                                    buttons=["download", "fullscreen"])
             out_info = gr.Textbox(label="Model info", lines=3)
     outputs = [out_label, out_img, out_cam, out_info]
+    prediction = btn.click(predict, [source, sketch, upload, model_sel, noise], outputs)
+    # Changing an input also cancels the response of any in-flight prediction.
     source.change(lambda value: (gr.update(visible=value == "Draw"), gr.update(visible=value == "Upload"),
                                  None, None, None, ""),
-                  source, [sketch, upload, *outputs], queue=False)
+                  source, [sketch, upload, *outputs], queue=False, cancels=[prediction])
     for component in (sketch, upload, model_sel, noise):
-        component.change(lambda: (None, None, None, ""), outputs=outputs, queue=False)
-    btn.click(predict, [source, sketch, upload, model_sel, noise], outputs)
+        component.change(lambda: (None, None, None, ""), outputs=outputs,
+                         queue=False, cancels=[prediction])
 
 if __name__ == "__main__":
     demo.launch()

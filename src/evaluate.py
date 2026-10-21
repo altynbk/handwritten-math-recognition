@@ -43,13 +43,23 @@ def evaluate_models(models_dir, X_test, y_test, X_augmented):
 
 def metric_differences(actual, expected, tolerance=1e-10):
     differences = []
-    if actual.keys() != expected.keys():
+    if (not isinstance(actual, dict) or not isinstance(expected, dict)
+            or actual.keys() != MODEL_FILES.keys() or expected.keys() != MODEL_FILES.keys()):
         return ["Model names differ from the reference metrics."]
-    for model in actual:
+    for model in MODEL_FILES:
         for split in ("clean_test", "augmented_test"):
-            for metric, value in actual[model][split].items():
-                ref = expected[model].get(split, {}).get(metric)
-                if ref is None or not np.isclose(value, ref, atol=tolerance, rtol=0):
+            for metric in ("accuracy", "f1_macro"):
+                values = []
+                for report in (actual, expected):
+                    try:
+                        value = report[model][split][metric]
+                    except (KeyError, TypeError):
+                        value = None
+                    values.append(value)
+                value, ref = values
+                valid = all(isinstance(v, (int, float)) and not isinstance(v, bool)
+                            and np.isfinite(v) and 0 <= v <= 1 for v in values)
+                if not valid or not np.isclose(value, ref, atol=tolerance, rtol=0):
                     differences.append(f"{model}/{split}/{metric}: {value} != {ref}")
     return differences
 
